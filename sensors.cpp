@@ -49,10 +49,12 @@ static float readADC(int pin) {
 }
 
 static float oilADCtoPSI(float adc) {
-  float v = adc * (3.3 / 4095.0);
-  if (v >= 3.2 || v < 0.05) return 0;        // open or short circuit
-  float r = OIL_R_PULLUP * v / (3.3 - v);    // sender resistance
-  float psi = (r - OIL_R_MIN) / (OIL_R_MAX - OIL_R_MIN) * OIL_PSI_MAX;
+  // ADC reads the divided voltage. Recover the actual sensor voltage.
+  float v_adc = adc * (3.3 / 4095.0);
+  float v_sensor = v_adc / OIL_DIVIDER;    // undo voltage divider
+
+  // Sensor outputs OIL_V_MIN (0.5V) at 0 PSI, OIL_V_MAX (4.5V) at max PSI
+  float psi = (v_sensor - OIL_V_MIN) / (OIL_V_MAX - OIL_V_MIN) * OIL_PSI_MAX;
   return constrain(psi, 0, OIL_PSI_MAX);
 }
 
