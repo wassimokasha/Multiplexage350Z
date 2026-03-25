@@ -109,10 +109,15 @@ void drawBatteryGauge() {
 }
 
 // ============================================================================
-// SCREEN 2 : TRIP COMPUTER / CLOCK
+// SCREEN 2 : INFO DISPLAY (clock + gauges summary)
 // ============================================================================
+// The original trip computer got its data (speed, trip, DTE, temp, fuel)
+// via serial protocol from the unified meter & A/C amp.
+// Until that protocol is decoded, this screen shows clock + oil/voltage.
+// When ENABLE_TRIP_SERIAL is on and data is decoded, it will show speed
+// and outside temperature as well.
 
-void drawTripComputer() {
+void drawInfoScreen() {
   tcaselect(2);
   u8g2.firstPage();
   do {
@@ -121,45 +126,36 @@ void drawTripComputer() {
 
     // Header
     u8g2.setFont(u8g2_font_5x7_tr);
-    if (displayMode == 0)      u8g2.drawStr(4, 10, "TRIP A");
-    else if (displayMode == 1) u8g2.drawStr(4, 10, "TRIP B");
-    else                       u8g2.drawStr(4, 10, "CLOCK");
-    u8g2.drawStr(95, 10, "350Z");
+    u8g2.drawStr(4, 10, "350Z");
 
-    if (displayMode <= 1) {
-      // Speed
-      char spd[6];
-      snprintf(spd, sizeof(spd), "%3d", constrain((int)speedKmh, 0, 299));
-      u8g2.setFont(u8g2_font_ncenB18_tr);
-      u8g2.drawStr(10, 40, spd);
-      u8g2.setFont(u8g2_font_5x7_tr);
-      u8g2.drawStr(85, 40, "km/h");
-
-      // Trip distance
-      u8g2.drawHLine(1, 47, 126);
-      float trip = (displayMode == 0) ? tripA_km : tripB_km;
-      char dst[12];
-      if (trip < 1000) dtostrf(trip, 6, 1, dst);
-      else             snprintf(dst, sizeof(dst), "%6d", (int)trip);
-      u8g2.setFont(u8g2_font_ncenB10_tr);
-      u8g2.drawStr(15, 62, dst);
-      u8g2.setFont(u8g2_font_5x7_tr);
-      u8g2.drawStr(100, 62, "km");
-
+#if ENABLE_TRIP_SERIAL
+    if (serialDataValid) {
+      u8g2.drawStr(70, 10, "SERIAL OK");
     } else {
-      // Clock
-      char clk[8];
-      snprintf(clk, sizeof(clk), "%02d:%02d", clockH, clockM);
-      u8g2.setFont(u8g2_font_ncenB18_tr);
-      u8g2.drawStr(20, 40, clk);
-
-      // Summary: voltage + oil
-      u8g2.drawHLine(1, 47, 126);
-      char info[22];
-      snprintf(info, sizeof(info), "%.1fV   %dPSI", battVolts, (int)oilPSI);
-      u8g2.setFont(u8g2_font_5x7_tr);
-      u8g2.drawStr(15, 62, info);
+      u8g2.drawStr(60, 10, "NO SIGNAL");
     }
+#endif
+
+    // Clock (large)
+    char clk[8];
+    snprintf(clk, sizeof(clk), "%02d:%02d", clockH, clockM);
+    u8g2.setFont(u8g2_font_ncenB18_tr);
+    u8g2.drawStr(25, 40, clk);
+
+    // Separator
+    u8g2.drawHLine(1, 47, 126);
+
+    // Oil pressure + voltage summary
+    char line[24];
+    snprintf(line, sizeof(line), "%dPSI", (int)oilPSI);
+    u8g2.setFont(u8g2_font_ncenB10_tr);
+    u8g2.drawStr(4, 62, line);
+
+    char vbuf[8];
+    dtostrf(battVolts, 4, 1, vbuf);
+    snprintf(line, sizeof(line), "%sV", vbuf);
+    u8g2.drawStr(75, 62, line);
+
   } while (u8g2.nextPage());
 
   // Advance animation frame

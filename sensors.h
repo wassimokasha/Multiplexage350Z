@@ -4,25 +4,23 @@
 #include <Arduino.h>
 #include "config.h"
 
-// Current smoothed readings (extern so displays can access them)
+// Current smoothed sensor readings
 extern float oilPSI;
 extern float battVolts;
-extern float speedKmh;
-extern float tripA_km;
-extern float tripB_km;
 
-// Clock
+// Clock (persisted to flash)
 extern int clockH, clockM, clockS;
 
-// Display mode (0=Trip A, 1=Trip B, 2=Clock)
-extern int displayMode;
+// Trip serial data (from unified meter, if decoded)
+extern float serialSpeed;       // km/h from unified meter
+extern float serialOutsideTemp; // outside air temperature
+extern bool  serialDataValid;   // true if we're receiving valid data
 
 void sensorsInit();
 void readOilPressure();
 void readBatteryVoltage();
-void updateSpeed();
 void updateClock();
-void handleButton();
+void processSerialData();
 void loadFromFlash();
 void saveToFlash();
 

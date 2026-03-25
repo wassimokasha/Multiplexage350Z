@@ -4,3 +4,5 @@
 *.bin
 *.hex
 build/
+.claude/
+fsm_pages/

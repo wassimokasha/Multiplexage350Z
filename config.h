@@ -2,114 +2,148 @@
 #define CONFIG_H
 
 // ============================================================================
-// FEATURE FLAGS — set to 0 to disable features you haven't wired yet
+// FEATURE FLAGS
 // ============================================================================
-#define ENABLE_VSS      0   // Set to 1 when you wire the VSS speed signal
-#define ENABLE_BUTTON   0   // Set to 1 when you wire the trip button
+// The trip computer data (speed, distance, DTE, temperature, fuel) is sent
+// to the triple meter via a proprietary Nissan serial protocol on pins 4/5.
+// Set ENABLE_TRIP_SERIAL to 1 to attempt decoding it (experimental).
+#define ENABLE_TRIP_SERIAL  0
 
 // ============================================================================
 // PIN ASSIGNMENTS
 // ============================================================================
-#define OIL_PIN       32    // Oil pressure signal (ADC1)
-#define VOLT_PIN      33    // Battery voltage sensor module (ADC1)
-#define VSS_PIN       34    // Vehicle speed signal (input-only, interrupt)
-#define BUTTON_PIN    35    // Trip/clock button (input-only)
+#define OIL_PIN       32    // Oil pressure sensor signal (ADC1)
+#define VOLT_PIN      33    // Battery voltage via sensor module (ADC1)
+#define SERIAL_RX_PIN 16    // RX from unified meter (pin 5 of M44) [optional]
+#define SERIAL_TX_PIN 17    // TX to unified meter (pin 4 of M44) [optional]
 
 // ============================================================================
-// 350Z TRIPLE METER CONNECTOR
+// 350Z TRIPLE METER CONNECTOR M44 — VERIFIED FROM FSM (DI-30 to DI-52)
 // ============================================================================
 //
-// The 3 center console gauges (oil, volt, clock) are a single unit called
-// the "Triple Meter Assembly" (Nissan P/N: 24845-CD000).
-// It connects via ONE white connector on the back of the unit.
+//  Pin  Wire Color   Signal                            Reference
+//  ───  ──────────   ──────────────────────────────    ─────────────
+//   1   B            Ground                            0V
+//   2   R/W          Battery power (constant 12V)      Always batt V
+//   3   G/Y          IGN ON/START power                Batt V (key ON)
+//   4   P            TX serial → unified meter         Digital ~5V
+//   5   L/B          RX serial ← unified meter         Digital ~5V
+//   7   G/OR         Oil pressure sensor GROUND        0V
+//   8   LG/R         Oil pressure sensor SIGNAL        ~1V(0psi) ~3V(72psi)
+//   9   R/L          Oil pressure sensor +5V POWER     ~5V
+//  12   R            Illumination signal               Variable
 //
-// ── CONFIRMED PINS ──
-//   Pin 8:  Oil pressure signal  |  Light Green/Red wire  |  0-5V analog
-//   Pin ?:  12V IGN (switched)   |  (probe with multimeter, key ON)
-//   Pin ?:  Ground               |  (continuity to chassis)
-//   Pin ?:  12V BATT (constant)  |  (12V even with key OFF, for clock memory)
-//   Pin ?:  VSS speed signal     |  (pulses when wheels spin)
-//   Pin ?:  Illumination +/-     |  (dims with dash lights)
-//   Pin ?:  Clock button         |  (from the trip/clock button)
+//  Pins 6, 10, 11 are not used.
 //
-// To identify unknown pins: use a multimeter on the car-side connector
-// with key ON. Or download the FSM (Factory Service Manual) section "DI"
-// from nicoclub.com/FSM/350Z/ — it has the full terminal layout.
-//
-// ── OIL PRESSURE SENSOR (25070-CD00A) ──
-// This is a 3-wire 0-5V analog sensor on the engine block.
-// The ECU provides +5V reference; pin 8 carries the 0-5V output signal.
-// Sensor stays powered by ECU even with triple meter disconnected.
-//
-//   Sensor connector (at engine):
-//     Red   = +5V reference (from ECU)
-//     Green = Signal output (0-5V proportional to pressure)
-//     Black = Ground
-//
-//   FSM pressure specs:
-//     Idle:      ~14 PSI   (~0.8V)
-//     2000 RPM:  ~43 PSI   (~2.1V)
-//     6000 RPM:  ~57 PSI   (~2.7V)
+// ── IMPORTANT NOTES FROM FSM ──
+//  • The triple meter POWERS the oil sensor (+5V on pin 9, GND on pin 7).
+//    Your circuit must provide this 5V or the sensor won't work.
+//  • Trip computer data (speed, trip distance, DTE, outside temp, avg fuel,
+//    avg speed, stopwatch, tire pressure) comes via serial protocol on pin 5.
+//    There is NO direct VSS speed signal on this connector.
+//  • The trip buttons (MODE/SET) are on the combination meter, not here.
+//  • The voltmeter simply reads pin 3 (IGN power = battery voltage).
 //
 // ============================================================================
-// WIRING: ESP32 to 350Z CONNECTOR
+// WIRING: ESP32 to CONNECTOR M44
 // ============================================================================
 //
-// ── POWER ──
-//   12V IGN pin ──→ LM2596 IN+ ──→ set to 5V ──→ ESP32 Vin
-//   Ground pin  ──→ LM2596 IN- ──→ ESP32 GND
+// ── POWER (from connector M44) ──
 //
-// ── BATTERY VOLTAGE (GPIO33) ──
-//   12V IGN pin ──→ Voltage Sensor module (+) input
-//   Ground pin  ──→ Voltage Sensor module (-) input
-//   Voltage Sensor S output ──→ GPIO33
+//   Pin 3 (G/Y, 12V IGN) ──→ LM2596 IN+
+//   Pin 1 (B, Ground)     ──→ LM2596 IN-
+//   LM2596 OUT+ (set 5V)  ──→ ESP32 Vin
+//   LM2596 OUT-           ──→ ESP32 GND
 //
-// ── OIL PRESSURE (GPIO32) ──
-//   Pin 8 signal is 0-5V. ESP32 ADC max is 3.3V → MUST step down!
-//   Use two 10KΩ resistors as a voltage divider:
+// ── OIL PRESSURE SENSOR POWER (you must provide this!) ──
 //
-//       Pin 8 (oil signal) ───[10KΩ]───┬───[10KΩ]─── GND
-//                                       │
-//                                    GPIO32
+//   Pin 9 (R/L) ←── connect to 5V (from LM2596 OUT+ or ESP32 Vin)
+//   Pin 7 (G/OR) ←── connect to GND
 //
-//   This halves the voltage: 0-5V → 0-2.5V (safe for ESP32)
+//   Without this, the oil pressure sensor gets no power and pin 8 = 0V.
 //
-// ── VSS (GPIO34) — OPTIONAL ──
-//   VSS is typically 0-12V square wave. Step down:
+// ── OIL PRESSURE SIGNAL (pin 8 → GPIO32) ──
 //
-//       VSS pin ───[10KΩ]───┬───[4.7KΩ]─── GND
-//                            │
-//                         GPIO34
+//   Sensor outputs 0-5V. ESP32 ADC max is 3.3V. Use voltage divider:
 //
-// ── BUTTON (GPIO35) — OPTIONAL ──
-//       Clock button pin ───→ GPIO35
-//       3.3V ───[10KΩ]───→ GPIO35  (external pull-up required)
+//       Pin 8 (LG/R) ───[10KΩ]───┬───[10KΩ]─── GND
+//                                 │
+//                              GPIO32
+//
+//   FSM reference: ~1V at 0 PSI (engine off), ~3V at 500kPa (72.5 PSI)
+//
+// ── BATTERY VOLTAGE (pin 3 → voltage sensor → GPIO33) ──
+//
+//   Pin 3 (G/Y, 12V IGN) ──→ Voltage Sensor module (+)
+//   Pin 1 (B, GND)        ──→ Voltage Sensor module (-)
+//   Voltage Sensor S       ──→ GPIO33
+//
+// ── TRIP SERIAL (pins 4,5 → ESP32 Serial2) — OPTIONAL / EXPERIMENTAL ──
+//
+//   Pin 5 (L/B, RX data from unified meter) is ~5V logic.
+//   Needs voltage divider for ESP32 3.3V:
+//
+//       Pin 5 (L/B) ───[10KΩ]───┬───[15KΩ]─── GND
+//                                │
+//                             GPIO16 (Serial2 RX)
+//
+//   Pin 4 (P, TX to unified meter):
+//       GPIO17 (Serial2 TX) ──→ level shifter ──→ Pin 4
+//       (only needed if you want to send data back)
+//
+// ============================================================================
+//
+//  COMPLETE CIRCUIT:
+//
+//    M44                    ESP32 / Modules
+//   ┌────┐
+//   │ 1  │─── GND ────────── ESP32 GND, LM2596 IN-, Volt Sensor (-)
+//   │ 2  │─── 12V BATT ───── (optional: keep ESP32 on with key OFF)
+//   │ 3  │─── 12V IGN ────── LM2596 IN+, Volt Sensor (+)
+//   │ 4  │─── TX serial ──── (future: GPIO17 via level shifter)
+//   │ 5  │─── RX serial ──── (future: GPIO16 via 10K/15K divider)
+//   │ 7  │─── Sensor GND ─── GND (already connected)
+//   │ 8  │─── Oil signal ─── [10K]──┬──[10K]──GND → GPIO32
+//   │ 9  │─── Sensor 5V ──── 5V (from LM2596 or ESP32 Vin pin)
+//   │ 12 │─── Illum ─────── (optional: dim OLEDs with dash lights)
+//   └────┘
+//
+//                LM2596 (set to 5V)
+//   12V IGN ──→ IN+          OUT+ ──→ ESP32 Vin + Pin 9 (sensor 5V)
+//   GND ──────→ IN-          OUT- ──→ ESP32 GND
+//
+//                Voltage Sensor (VCC<25V)
+//   12V IGN ──→ (+)          S ──→ GPIO33
+//   GND ──────→ (-)          VCC ──→ ESP32 3.3V
+//                             GND ──→ ESP32 GND
+//
+//                TCA9548A
+//   ESP32 SDA (21) ──→ SDA     SD0/SC0 ──→ OLED 0 (Oil Pressure)
+//   ESP32 SCL (22) ──→ SCL     SD1/SC1 ──→ OLED 1 (Battery Voltage)
+//   ESP32 3.3V ──────→ VIN     SD2/SC2 ──→ OLED 2 (Trip/Info)
+//   ESP32 GND ───────→ GND
 //
 // ============================================================================
 
-// ── OIL PRESSURE CALIBRATION ──
-// The sensor outputs 0.5V at 0 PSI and ~4.5V at max PSI (typical Nissan).
-// After the 10K/10K voltage divider, ESP32 sees half: 0.25V - 2.25V.
-// Divider ratio = 0.5 (bottom resistor / total resistance)
+// ── OIL PRESSURE CALIBRATION (from FSM reference values) ──
+// Sensor output through 10K/10K divider:
+//   ~1V sensor = 0 PSI → 0.5V at ESP32
+//   ~3V sensor = 500kPa (72.5 PSI) → 1.5V at ESP32
+//   ~4.5V sensor = max → 2.25V at ESP32
 #define OIL_DIVIDER     0.5     // 10K/(10K+10K) voltage divider ratio
-#define OIL_V_MIN       0.5     // Sensor output voltage at 0 PSI
-#define OIL_V_MAX       4.5     // Sensor output voltage at max PSI
+#define OIL_V_MIN       1.0     // Sensor voltage at 0 PSI (FSM: ~1V engine off)
+#define OIL_V_MAX       4.5     // Sensor voltage at max PSI
 #define OIL_PSI_MAX     120.0   // Full scale PSI
+// FSM data points: 1V=0psi, 3V=72.5psi → slope ≈ 36.25 PSI/V from 1V
 
 // ── BATTERY VOLTAGE CALIBRATION ──
-// Your voltage sensor module's calibration factor.
-// Adjust until the reading matches a multimeter on the battery.
-#define VOLT_FACTOR   4.648
-
-// ── VSS CALIBRATION ──
-// 350Z stock: ~4000 pulses/mile ≈ 2485 pulses/km
-#define VSS_PULSES_PER_KM  2485.0
+#define VOLT_FACTOR   4.648     // Adjust to match multimeter
 
 // ── ADC ──
-#define ADC_SAMPLES   16    // Oversampling for noise reduction
+#define ADC_SAMPLES   16
 
 // ── TIMING ──
-#define DISPLAY_INTERVAL_MS  100    // ~10 Hz refresh
-#define SAVE_INTERVAL_MS     30000  // Save trip to flash every 30s
+#define DISPLAY_INTERVAL_MS  100
+#define SAVE_INTERVAL_MS     30000
 
 #endif

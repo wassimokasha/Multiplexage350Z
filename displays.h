@@ -7,6 +7,6 @@ void displaysInit();
 void bootAnimation();
 void drawOilGauge();
 void drawBatteryGauge();
-void drawTripComputer();
+void drawInfoScreen();
 
 #endif
